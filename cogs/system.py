@@ -1,15 +1,68 @@
 import asyncio
+import json
 import sys
 import traceback
+from os import path
+from typing import Dict, AnyStr, Any
 
-from discord.ext import commands
+import discord
+from discord.ext import commands, tasks
+
+ConfigDict = Dict[AnyStr, Any]
 
 
 class System(commands.Cog):
-    """Essential core cog. Provides commands that manage the bot's general operation."""
+    """Essential core cog. Provides the config service that stores settings per guild."""
 
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._configs = dict()
+        self.config_flush_auto.start()
+
+    def config_load(self, guild: discord.Guild) -> ConfigDict:
+        """
+        Loads the configuration for a guild.
+
+        :param guild: guild to load config for
+        :return: config for the specified guild.
+        """
+        guild_key = str(guild.id)
+        if guild_key in self._configs:
+            return dict(self._configs[guild_key])
+        config_file = f'configs/{guild_key}.json'
+        if path.exists(config_file):
+            # read from file (and cache it)
+            f = open(config_file, 'r')
+            config_dict = self._configs[guild_key] = json.load(f)
+            f.close()
+        else:
+            # create new store in cache
+            config_dict = self._configs[guild_key] = dict()
+        return dict(config_dict)
+
+    def config_save(self, guild: discord.Guild, config: ConfigDict) -> None:
+        """
+        Saves the configuration for a guild.
+
+        :param guild: guild to save config for
+        :param config: config to save
+        """
+        self._configs[str(guild.id)] = config
+
+    def config_flush(self) -> None:
+        """Flushes the configuration cache to disk."""
+        for guild, config in self._configs.items():
+            f = open(f'configs/{guild}.json', 'w')
+            json.dump(config, f)
+            f.close()
+
+    @tasks.loop(minutes=5.0)
+    async def config_flush_auto(self):
+        self.config_flush()
+
+    def cog_unload(self):
+        self.config_flush_auto.cancel()
+        self.config_flush()
 
     @commands.group(aliases=['sys'], hidden=True)
     @commands.is_owner()
@@ -34,8 +87,65 @@ class System(commands.Cog):
             await ctx.send('Shutdown cancelled.')
             return
 
+        await ctx.send("**_Unloading extensions..._**")
+        exts = list(self.bot.extensions.keys())
+        for ext in reversed(exts):
+            self.bot.unload_extension(ext)
         await ctx.send('**_Shutting down..._**')
         await self.bot.close()
+
+    @system.group(aliases=['cfgs', 'configs'])
+    async def configurations(self, ctx):
+        """Commands that manage the bot's configuration cache."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(self.configurations)
+
+    @configurations.command(name='flush-auto')
+    async def cfgs_flush_auto(self, ctx, state: bool):
+        """
+        Configures the auto flush loop, which runs every 5 minutes when enabled.
+
+        <state> - new state: `True` for enabled, `False` for disabled
+        """
+        if state:
+            try:
+                self.config_flush_auto.start()
+                await ctx.send('Auto flush loop has been started.')
+            except RuntimeError:
+                await ctx.send('Auto flush loop is already running.')
+        else:
+            try:
+                self.config_flush_auto.cancel()
+                await ctx.send('Auto flush loop has been cancelled.')
+            except RuntimeError:
+                await ctx.send('Auto flush loop is not running.')
+
+    @configurations.command(name='clear-cache')
+    async def cfgs_clear_cache(self, ctx, flush: bool = True):
+        """
+        Clears the configurations cache.
+
+        [flush] - if `True`, flushes the cache to disk before clearing it."""
+        if flush:
+            await self.config_flush_auto.cancel()
+            self.config_flush()
+            await self.config_flush_auto.start()
+        self._configs = dict()
+
+    @configurations.command(name='reload-all')
+    async def cfgs_reload_all(self, ctx):
+        """Reloads all loaded configurations."""
+        cfgs_to_del = []
+        for guild in self._configs:
+            config_file = f'configs/{guild}.json'
+            if path.exists(config_file):
+                f = open(config_file, 'r')
+                self._configs[guild] = json.load(f)
+                f.close()
+            else:
+                cfgs_to_del.append(guild)
+        for guild in cfgs_to_del:
+            del self._configs[guild]
 
     @system.group(aliases=['exts'])
     async def extensions(self, ctx):
@@ -56,7 +166,7 @@ class System(commands.Cog):
             await ctx.send(page)
 
     @extensions.command(name='load', aliases=['reload'])
-    async def exts_load(self, ctx, *exts):
+    async def exts_load(self, ctx, *exts: str):
         """
         Loads the specified extensions. If one is already loaded, it is reloaded.
 
@@ -95,7 +205,7 @@ class System(commands.Cog):
             await ctx.send(page)
 
     @extensions.command(name='unload')
-    async def exts_unload(self, ctx, *exts):
+    async def exts_unload(self, ctx, *exts: str):
         """
         Unloads the specified extensions.
 
@@ -121,5 +231,5 @@ class System(commands.Cog):
             await ctx.send(page)
 
 
-def setup(bot):
+def setup(bot: commands.Bot):
     bot.add_cog(System(bot))

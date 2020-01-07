@@ -133,3 +133,9 @@ dmypy.json
 
 # Discord bot token file
 .token
+
+# System cog storage (guild configs)
+configs/
+
+# UserData cog storage
+userdata/

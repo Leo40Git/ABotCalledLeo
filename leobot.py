@@ -20,7 +20,7 @@ class EmbedHelpCommand(commands.MinimalHelpCommand):
         appinfo = await self.context.bot.application_info()
         embed = discord.Embed(color=discord.Color.dark_blue(),
                               title=f'Sending aid for **{appinfo.name}**!',
-                              description=bot.description)
+                              description=bot.description if appinfo.description is None else appinfo.description)
         if appinfo.icon is not None:
             embed.set_thumbnail(url=f'https://cdn.discordapp.com/app-icons/{appinfo.id}/{appinfo.icon}.png')
 
@@ -130,7 +130,7 @@ class LeoBot(commands.AutoShardedBot):
         elif isinstance(exception, commands.CheckFailure):
             title = ':no_entry_sign: **_NO WAY!!!_**'
         elif not isinstance(exception, commands.CommandNotFound):
-            print('Exception in command "{}":'.format(context.command), file=sys.stderr)
+            print('Exception in command "{}":'.format(context.command.qualified_name), file=sys.stderr)
             traceback.print_exception(type(exception), exception, exception.__traceback__, file=sys.stderr)
         embed = discord.Embed(color=color,
                               title=title,
@@ -138,7 +138,7 @@ class LeoBot(commands.AutoShardedBot):
         await context.send(embed=embed)
 
 
-async def get_prefix(bot, message):
+async def get_prefix(bot: commands.Bot, message: discord.Message):
     extras = settings.prefixes
     if settings.prefixes_dm is not None and isinstance(message.channel, (discord.DMChannel, discord.GroupChannel)):
         extras = settings.prefixes_dm
@@ -149,9 +149,7 @@ async def get_prefix(bot, message):
 
 
 if __name__ == '__main__':
-    bot = LeoBot(command_prefix=get_prefix, help_command=EmbedHelpCommand(),
-                 description='General-purpose Discord bot written in Python.\nMore information can be found here: '
-                             'https://github.com/Leo40Git/ABotCalledLeo')
+    bot = LeoBot(command_prefix=get_prefix, help_command=EmbedHelpCommand())
     try:
         bot.load_extension('cogs.system')
     except commands.ExtensionError as e:

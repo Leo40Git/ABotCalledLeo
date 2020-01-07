@@ -1,5 +1,7 @@
 # Extensions to load on startup
-startup_extensions = []
+startup_extensions = [
+    'cogs.userdata'
+]
 
 # Command prefixes
 prefixes = ['!']
