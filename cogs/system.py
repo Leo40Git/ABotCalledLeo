@@ -3,7 +3,7 @@ import json
 import sys
 import traceback
 from os import path
-from typing import Dict, AnyStr, Any
+from typing import Dict, AnyStr, Any, NoReturn
 
 import discord
 from discord.ext import commands, tasks
@@ -40,7 +40,7 @@ class System(commands.Cog):
             config_dict = self._configs[guild_key] = dict()
         return dict(config_dict)
 
-    def config_save(self, guild: discord.Guild, config: ConfigDict) -> None:
+    def config_save(self, guild: discord.Guild, config: ConfigDict) -> NoReturn:
         """
         Saves the configuration for a guild.
 
@@ -49,7 +49,7 @@ class System(commands.Cog):
         """
         self._configs[str(guild.id)] = config
 
-    def config_flush(self) -> None:
+    def config_flush(self) -> NoReturn:
         """Flushes the configuration cache to disk."""
         for guild, config in self._configs.items():
             f = open(f'configs/{guild}.json', 'w')
@@ -61,19 +61,22 @@ class System(commands.Cog):
         self.config_flush()
 
     def cog_unload(self):
-        self.config_flush_auto.cancel()
+        try:
+            self.config_flush_auto.cancel()
+        except RuntimeError:
+            pass
         self.config_flush()
 
     @commands.group(aliases=['sys'], hidden=True)
     @commands.is_owner()
     @commands.dm_only()
-    async def system(self, ctx):
+    async def system(self, ctx: commands.Context):
         """Commands that manage the bot's general operation."""
         if ctx.invoked_subcommand is None:
             await ctx.send_help(self.system)
 
     @system.command(name='exit', aliases=['shutdown'])
-    async def sys_exit(self, ctx):
+    async def sys_exit(self, ctx: commands.Context):
         """Shuts the bot down."""
         await ctx.send('Are you sure you want to shut down the bot?\n'
                        'If yes, send "yes" in the next 5 seconds.')
@@ -95,13 +98,25 @@ class System(commands.Cog):
         await self.bot.close()
 
     @system.group(aliases=['cfgs', 'configs'])
-    async def configurations(self, ctx):
+    async def configurations(self, ctx: commands.Context):
         """Commands that manage the bot's configuration cache."""
         if ctx.invoked_subcommand is None:
             await ctx.send_help(self.configurations)
 
+    @configurations.command(name='flush')
+    async def cfgs_flush(self, ctx: commands.Context):
+        """Flushes the config cache to disk."""
+        was_running = True
+        try:
+            self.config_flush_auto.cancel()
+        except RuntimeError:
+            was_running = False
+        self.config_flush()
+        if was_running:
+            self.config_flush_auto.start()
+
     @configurations.command(name='flush-auto')
-    async def cfgs_flush_auto(self, ctx, state: bool):
+    async def cfgs_flush_auto(self, ctx: commands.Context, state: bool):
         """
         Configures the auto flush loop, which runs every 5 minutes when enabled.
 
@@ -118,22 +133,28 @@ class System(commands.Cog):
                 self.config_flush_auto.cancel()
                 await ctx.send('Auto flush loop has been cancelled.')
             except RuntimeError:
-                await ctx.send('Auto flush loop is not running.')
+                await ctx.send('Auto flush loop has already been cancelled.')
 
     @configurations.command(name='clear-cache')
-    async def cfgs_clear_cache(self, ctx, flush: bool = True):
+    async def cfgs_clear_cache(self, ctx: commands.Context, flush: bool = True):
         """
         Clears the configurations cache.
 
         [flush] - if `True`, flushes the cache to disk before clearing it."""
         if flush:
-            await self.config_flush_auto.cancel()
+            try:
+                self.config_flush_auto.cancel()
+            except RuntimeError:
+                pass
             self.config_flush()
-            await self.config_flush_auto.start()
+            try:
+                self.config_flush_auto.start()
+            except RuntimeError:
+                pass
         self._configs = dict()
 
     @configurations.command(name='reload-all')
-    async def cfgs_reload_all(self, ctx):
+    async def cfgs_reload_all(self, ctx: commands.Context):
         """Reloads all loaded configurations."""
         cfgs_to_del = []
         for guild in self._configs:
@@ -148,13 +169,13 @@ class System(commands.Cog):
             del self._configs[guild]
 
     @system.group(aliases=['exts'])
-    async def extensions(self, ctx):
+    async def extensions(self, ctx: commands.Context):
         """Commands that manage the bot's loaded extensions."""
         if ctx.invoked_subcommand is None:
             await ctx.send_help(self.extensions)
 
     @extensions.command(name='list')
-    async def exts_list(self, ctx):
+    async def exts_list(self, ctx: commands.Context):
         """Lists all loaded extensions."""
         exts = self.bot.extensions
         pag = commands.Paginator()
@@ -166,7 +187,7 @@ class System(commands.Cog):
             await ctx.send(page)
 
     @extensions.command(name='load', aliases=['reload'])
-    async def exts_load(self, ctx, *exts: str):
+    async def exts_load(self, ctx: commands.Context, *exts: str):
         """
         Loads the specified extensions. If one is already loaded, it is reloaded.
 
@@ -205,7 +226,7 @@ class System(commands.Cog):
             await ctx.send(page)
 
     @extensions.command(name='unload')
-    async def exts_unload(self, ctx, *exts: str):
+    async def exts_unload(self, ctx: commands.Context, *exts: str):
         """
         Unloads the specified extensions.
 
