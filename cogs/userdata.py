@@ -52,7 +52,7 @@ class UserData(commands.Cog):
             guild_dict = self._userdata[guild]
             for user in guild_dict.keys():
                 user_file_dir = f'userdata/{guild}'
-                os.makedirs(user_file_dir, exist_ok = True)
+                os.makedirs(user_file_dir, exist_ok=True)
                 user_file = f'{user_file_dir}/{user}.json'
                 f = open(user_file, 'w')
                 json.dump(guild_dict[user], f)

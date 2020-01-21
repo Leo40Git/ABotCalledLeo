@@ -1,10 +1,12 @@
+from typing import Optional
+
 import discord
 from discord.ext import commands
-from typing import Optional
 
 
 class Administration(commands.Cog):
     """Provides administrative commands."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 

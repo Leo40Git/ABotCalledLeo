@@ -1,8 +1,8 @@
 import itertools
 import sys
+import textwrap
 import traceback
 from typing import List
-import textwrap
 
 import discord
 from discord.ext import commands
