@@ -1,9 +1,8 @@
-# # # GENERAL SETTINGS # # #
-
 # Extensions to load on startup
 startup_extensions = [
     'cogs.userdata',
-    'cogs.economy'
+    'cogs.economy',
+    'cogs.admin'
 ]
 
 # Command prefixes
@@ -12,8 +11,3 @@ prefixes = ['!']
 prefixes_dm = None
 # Should a mention be considered a command prefix?
 mention_prefix = True
-
-# # # ECONOMY COG # # #
-
-# Payday payout
-payday_amount = 500

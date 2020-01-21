@@ -38,16 +38,7 @@ class System(commands.Cog):
         else:
             # create new store in cache
             config_dict = self._configs[guild_key] = dict()
-        return dict(config_dict)
-
-    def config_save(self, guild: discord.Guild, config: ConfigDict) -> NoReturn:
-        """
-        Saves the configuration for a guild.
-
-        :param guild: guild to save config for
-        :param config: config to save
-        """
-        self._configs[str(guild.id)] = config
+        return config_dict
 
     def config_flush(self) -> NoReturn:
         """Flushes the configuration cache to disk."""
@@ -67,7 +58,7 @@ class System(commands.Cog):
             pass
         self.config_flush()
 
-    @commands.group(aliases=['sys'], hidden=True)
+    @commands.group(aliases=['sys'])
     @commands.is_owner()
     @commands.dm_only()
     async def system(self, ctx: commands.Context):
@@ -76,19 +67,24 @@ class System(commands.Cog):
             await ctx.send_help(self.system)
 
     @system.command(name='exit', aliases=['shutdown'])
-    async def sys_exit(self, ctx: commands.Context):
-        """Shuts the bot down."""
-        await ctx.send('Are you sure you want to shut down the bot?\n'
-                       'If yes, send "yes" in the next 5 seconds.')
+    async def sys_exit(self, ctx: commands.Context, force: bool = False):
+        """
+        Shuts the bot down.
 
-        def check(m):
-            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'yes'
+        `[force]` - if True, skips confirmation.
+        """
+        if not force:
+            await ctx.send('Are you sure you want to shut down the bot?\n'
+                           'If yes, send "yes" in the next 5 seconds.')
 
-        try:
-            msg = await self.bot.wait_for('message', check=check, timeout=5)
-        except asyncio.TimeoutError:
-            await ctx.send('Shutdown cancelled.')
-            return
+            def check(m):
+                return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'yes'
+
+            try:
+                await self.bot.wait_for('message', check=check, timeout=5)
+            except asyncio.TimeoutError:
+                await ctx.send('Shutdown cancelled.')
+                return
 
         await ctx.send("**_Unloading extensions..._**")
         exts = list(self.bot.extensions.keys())
@@ -120,7 +116,7 @@ class System(commands.Cog):
         """
         Configures the auto flush loop, which runs every 5 minutes when enabled.
 
-        <state> - new state: `True` for enabled, `False` for disabled
+        `<state>` - new state: `True` for enabled, `False` for disabled
         """
         if state:
             try:
@@ -140,7 +136,7 @@ class System(commands.Cog):
         """
         Clears the configurations cache.
 
-        [flush] - if `True`, flushes the cache to disk before clearing it."""
+        `[flush]` - if `True`, flushes the cache to disk before clearing it."""
         if flush:
             try:
                 self.config_flush_auto.cancel()

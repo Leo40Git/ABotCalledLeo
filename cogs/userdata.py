@@ -15,10 +15,10 @@ class UserData(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._guild_dicts = dict()
-        self.user_flush_auto.start()
+        self._userdata = dict()
+        self.userdata_flush_auto.start()
 
-    def user_load(self, guild: Optional[discord.Guild], user: discord.User) -> UserDict:
+    def userdata_load(self, guild: Optional[discord.Guild], user: discord.User) -> UserDict:
         """
         Loads data for a user, in the scope of a guild.
 
@@ -27,10 +27,10 @@ class UserData(commands.Cog):
         :return: data for the specified user, in the scope of the specified guild.
         """
         guild_key = '_GLOBAL' if guild is None else str(guild.id)
-        if guild_key in self._guild_dicts:
-            guild_dict = self._guild_dicts[guild_key]
+        if guild_key in self._userdata:
+            guild_dict = self._userdata[guild_key]
         else:
-            guild_dict = self._guild_dicts[guild_key] = dict()
+            guild_dict = self._userdata[guild_key] = dict()
         user_key = str(user.id)
         # try to locate in cache first
         if user_key in guild_dict:
@@ -44,29 +44,12 @@ class UserData(commands.Cog):
         else:
             # create new store in cache
             user_dict = guild_dict[user_key] = dict()
-        return dict(user_dict)
+        return user_dict
 
-    def user_save(self, guild: Optional[discord.Guild], user: discord.User, data: UserDict) -> NoReturn:
-        """
-        Saves data for a user, in the scope guild.
-
-        :param guild: guild to scope in. if None, saves as global data
-        :param user: user to load data for
-        :param data: data for the specified user, in the scope of the specified guild
-        """
-        guild_key = '_GLOBAL' if guild is None else str(guild.id)
-        if guild_key in self._guild_dicts:
-            guild_dict = self._guild_dicts[guild_key]
-        else:
-            guild_dict = self._guild_dicts[guild_key] = dict()
-        user_key = str(user.id)
-        # save to cache
-        guild_dict[user_key] = dict(data)
-
-    def user_flush(self) -> NoReturn:
+    def userdata_flush(self) -> NoReturn:
         """Flushes the data store cache to disk."""
-        for guild in self._guild_dicts.keys():
-            guild_dict = self._guild_dicts[guild]
+        for guild in self._userdata.keys():
+            guild_dict = self._userdata[guild]
             for user in guild_dict.keys():
                 user_file_dir = f'userdata/{guild}'
                 os.makedirs(user_file_dir, exist_ok = True)
@@ -75,18 +58,18 @@ class UserData(commands.Cog):
                 json.dump(guild_dict[user], f)
                 f.close()
 
+    @tasks.loop(minutes=5.0)
+    async def userdata_flush_auto(self):
+        self.userdata_flush()
+
     def cog_unload(self):
         try:
-            self.user_flush_auto.cancel()
+            self.userdata_flush_auto.cancel()
         except RuntimeError:
             pass
-        self.user_flush()
+        self.userdata_flush()
 
-    @tasks.loop(minutes=5.0)
-    async def user_flush_auto(self):
-        self.user_flush()
-
-    @commands.group(aliases=['ud'], hidden=True)
+    @commands.group(aliases=['ud'])
     @commands.is_owner()
     @commands.dm_only()
     async def userdata(self, ctx: commands.Context):
@@ -99,13 +82,13 @@ class UserData(commands.Cog):
         """Flushes the userdata cache to disk."""
         was_running = True
         try:
-            self.user_flush_auto.cancel()
+            self.userdata_flush_auto.cancel()
         except RuntimeError:
             was_running = False
-        self.user_flush()
+        self.userdata_flush()
         if was_running:
             try:
-                self.user_flush_auto.start()
+                self.userdata_flush_auto.start()
             except RuntimeError:
                 pass
 
@@ -114,17 +97,17 @@ class UserData(commands.Cog):
         """
         Configures the auto flush loop, which runs every 5 minutes when enabled.
 
-        <state> - new state: `True` for enabled, `False` for disabled
+        `<state>` - new state: `True` for enabled, `False` for disabled
         """
         if state:
             try:
-                self.user_flush_auto.start()
+                self.userdata_flush_auto.start()
                 await ctx.send('Auto flush loop has been started.')
             except RuntimeError:
                 await ctx.send('Auto flush loop is already running.')
         else:
             try:
-                self.user_flush_auto.cancel()
+                self.userdata_flush_auto.cancel()
                 await ctx.send('Auto flush loop has been cancelled.')
             except RuntimeError:
                 await ctx.send('Auto flush loop has already been cancelled.')
@@ -134,29 +117,29 @@ class UserData(commands.Cog):
         """
         Clears the userdata cache.
 
-        [flush] - if `True`, flushes the cache to disk before clearing it."""
+        `[flush]` - if `True`, flushes the cache to disk before clearing it."""
         if flush:
             try:
-                self.user_flush_auto.cancel()
+                self.userdata_flush_auto.cancel()
             except RuntimeError:
                 pass
-            self.user_flush()
+            self.userdata_flush()
             try:
-                self.user_flush_auto.start()
+                self.userdata_flush_auto.start()
             except RuntimeError:
                 pass
-        self._guild_dicts = dict()
+        self._userdata = dict()
 
     @userdata.command(name='reload-all')
     async def ud_reload_all(self, ctx: commands.Context):
         """Reloads all loaded data stores."""
         guilds_to_del = []
         users_to_del = dict()
-        for guild in self._guild_dicts.keys():
+        for guild in self._userdata.keys():
             if not path.exists(f'userdata/{guild}'):
                 guilds_to_del.append(guild)
                 continue
-            guild_dict = self._guild_dicts[guild]
+            guild_dict = self._userdata[guild]
             for user in guild_dict.keys():
                 user_file = f'userdata/{guild}/{user}.json'
                 if path.exists(user_file):
@@ -169,10 +152,10 @@ class UserData(commands.Cog):
                     else:
                         users_to_del[guild] = [user]
         for guild in guilds_to_del:
-            del self._guild_dicts[guild]
+            del self._userdata[guild]
         for guild in users_to_del.keys():
             for user in users_to_del[guild]:
-                del self._guild_dicts[guild][user]
+                del self._userdata[guild][user]
 
 
 def setup(bot: commands.Bot):

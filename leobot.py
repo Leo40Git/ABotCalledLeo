@@ -1,6 +1,8 @@
 import itertools
 import sys
 import traceback
+from typing import List
+import textwrap
 
 import discord
 from discord.ext import commands
@@ -8,13 +10,67 @@ from discord.ext import commands
 import settings
 
 
-class EmbedHelpCommand(commands.MinimalHelpCommand):
+class EmbedHelpCommand(commands.HelpCommand):
     def __init__(self):
-        super(EmbedHelpCommand, self).__init__(command_attrs=dict(help='Provides help on the bot\'s various commands.'
+        super(EmbedHelpCommand, self).__init__(verify_checks=True,
+                                               command_attrs=dict(help='Provides help on the bot\'s various commands.'
                                                                        '\n'
                                                                        '\n`[command]` - Cog/group/command to provide '
                                                                        'help for. If not specified, shows a list of '
                                                                        'all the bot\'s commands.'))
+
+    def make_help_values(self, cmd_list: List[commands.Command]):
+        first = True
+        names = ''
+        briefs = ''
+        for command in cmd_list:
+            if first:
+                first = False
+            else:
+                names += '\n'
+                briefs += '\n'
+            name_w = textwrap.wrap(command.name, width=46)
+            brief_w = textwrap.wrap('(no description)' if command.short_doc == '' else command.short_doc, width=46)
+            n = max(len(name_w), len(brief_w))
+            name_w += [''] * (n - len(name_w))
+            brief_w += [''] * (n - len(brief_w))
+            names += '\n'.join(name_w)
+            briefs += '\n'.join(brief_w)
+        return names, briefs
+
+    def add_commands_to_embed(self, embed: discord.Embed, raw_cmds: List[commands.Command], name: str = '**Names:**'):
+        group_list = list()
+        commands_list = list()
+
+        def keyfunc(value):
+            return isinstance(value, commands.Group)
+
+        for k, v in itertools.groupby(raw_cmds, key=keyfunc):
+            if k:
+                group_list.extend(v)
+            else:
+                commands_list.extend(v)
+
+        has_groups = len(group_list) > 0
+        has_commands = len(commands_list) > 0
+
+        cmd_names = '**Groups:**' if has_groups else '**Commands:**'
+        cmd_briefs = '\u200B'
+        if has_groups:
+            value_n, value_b = self.make_help_values(group_list)
+            cmd_names += '\n' + value_n
+            cmd_briefs += '\n' + value_b
+        if has_commands:
+            if has_groups:
+                cmd_names += '\n\n**Commands:**'
+                cmd_briefs += '\n\n'
+            value_n, value_b = self.make_help_values(commands_list)
+            cmd_names += '\n' + value_n
+            cmd_briefs += '\n' + value_b
+
+        embed.add_field(name=name, value=cmd_names)
+        embed.add_field(name='**Briefs:**', value=cmd_briefs)
+        embed.add_field(name='\u200B', value='\u200B')  # new 'line'
 
     async def send_bot_help(self, mapping):
         appinfo = await self.context.bot.application_info()
@@ -24,74 +80,47 @@ class EmbedHelpCommand(commands.MinimalHelpCommand):
         if appinfo.icon is not None:
             embed.set_thumbnail(url=f'https://cdn.discordapp.com/app-icons/{appinfo.id}/{appinfo.icon}.png')
 
-        for cog, commands in mapping.items():
-            filtered = await self.filter_commands(commands, sort=True)
-            if len(filtered) == 0:
+        for cog, raw_cmds in mapping.items():
+            command_list = await self.filter_commands(raw_cmds, sort=True)
+            if len(command_list) == 0:
                 continue
             if cog is None:
                 name = '**Uncategorized:**'
             else:
                 name = f'**{cog.qualified_name}:**'
-            value_first = True
-            value_n = ''
-            value_b = ''
-            for command in filtered:
-                if value_first:
-                    value_first = False
-                else:
-                    value_n += '\n'
-                    value_b += '\n'
-                value_n += command.name
-                value_b += '(no description)' if command.short_doc == '' else command.short_doc
-            embed.add_field(name=name, value=value_n)
-            embed.add_field(name='**Briefs:**', value=value_b)
-            embed.add_field(name='\u200B', value='\u200B')  # new 'line'
+            self.add_commands_to_embed(embed, command_list, name)
         await self.get_destination().send(embed=embed)
 
     async def send_cog_help(self, cog):
         embed = discord.Embed(color=discord.Color.dark_blue(),
                               title=f'Sending aid for cog **{cog.qualified_name}**!',
                               description='(no description)' if cog.description is None else cog.description)
-        commands = await self.filter_commands(cog.get_commands(), sort=True)
-        if len(commands) > 0:
-            mapping = itertools.groupby(commands, )
-            value_first = True
-            value_n = ''
-            value_b = ''
-            for command in commands:
-                if value_first:
-                    value_first = False
-                else:
-                    value_n += '\n'
-                    value_b += '\n'
-                value_n += command.name
-                value_b += '(no description)' if command.short_doc == '' else command.short_doc
-            embed.add_field(name='**Commands:**', value=value_n)
-            embed.add_field(name='**Briefs:**', value=value_b)
+        command_list = await self.filter_commands(cog.get_commands(), sort=True)
+        if len(command_list) > 0:
+            self.add_commands_to_embed(embed, command_list)
         await self.get_destination().send(embed=embed)
 
+    async def command_can_run(self, command: commands.Command):
+        try:
+            root_parent = command.root_parent
+            if root_parent is None:
+                return await command.can_run(self.context)
+            else:
+                return await root_parent.can_run(self.context)
+        except commands.CommandError:
+            return False
+
     async def send_group_help(self, group):
+        if not await self.command_can_run(group):
+            string = await discord.utils.maybe_coroutine(self.command_not_found,
+                                                         self.context.kwargs['command'].split()[0])
+            return await self.send_error_message(string)
         embed = discord.Embed(color=discord.Color.dark_blue(),
                               title=f'Sending aid for group **{group.name}**!',
                               description='(no description)' if group.help == '' else group.help)
-        old_show_hidden = self.show_hidden
-        self.show_hidden = group.hidden
-        commands = await self.filter_commands(group.commands, sort=True)
-        self.show_hidden = old_show_hidden
-        if len(commands) > 0:
-            value_first = True
-            value_n = ''
-            value_b = ''
-            for command in commands:
-                if value_first:
-                    value_first = False
-                else:
-                    value_n += '\n'
-                    value_b += '\n'
-                value_n += command.name
-                value_b += '(no description)' if command.short_doc == '' else command.short_doc
-            embed.add_field(name='**Commands:**', value=value_n)
-            embed.add_field(name='**Briefs:**', value=value_b)
+        command_list = await self.filter_commands(group.commands, sort=True)
+        if len(command_list) > 0:
+            self.add_commands_to_embed(embed, command_list)
         await self.get_destination().send(embed=embed)
 
     async def send_command_help(self, command):
