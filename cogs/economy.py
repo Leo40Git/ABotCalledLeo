@@ -11,6 +11,22 @@ class Economy(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    def credits_has_account(self, user: discord.User):
+        """
+        Checks if a user has a credits account.
+
+        :param user: user to check
+        :return: True if user has an account, False otherwise
+        """
+        userdata = self.bot.get_cog('UserData')
+        if userdata is None:
+            raise Exception('Economy cog requires UserData cog')
+        u_dict = userdata.userdata_load(None, user)
+        if 'economy' not in u_dict:
+            return False
+        u_dict = u_dict['economy']
+        return 'credits' in u_dict
+
     def economy_get_dict(self, user: discord.User) -> Dict[AnyStr, Any]:
         """
         Retrieves a user's credits data store.
@@ -132,10 +148,8 @@ class Economy(commands.Cog):
     @commands.command(name='account-create')
     async def acc_create(self, ctx: commands.Context):
         """Creates an account for you, if you don't already have one."""
-        balance = self.credits_get(ctx.author, False)
-        if balance is not None:
+        if self.credits_has_account(ctx.author):
             await ctx.send('You already have an account!')
-            return
         self.credits_set(ctx.author, 0)
 
     @commands.command()
@@ -147,17 +161,17 @@ class Economy(commands.Cog):
         """
         if user is None:
             user = ctx.author
-        balance = self.credits_get(user, False)
-        if balance is None:
+        if not self.credits_has_account(user):
             if user == ctx.author:
                 await ctx.send('You don\'t have an account!')
             else:
                 await ctx.send(f'`{str(user)}` doesn\'t have an account!')
+            return
+        balance = self.credits_get(user)
+        if user == ctx.author:
+            await ctx.send(f'You have **{str(balance)}** credits in your account.')
         else:
-            if user == ctx.author:
-                await ctx.send(f'You have **{str(balance)}** credits in your account.')
-            else:
-                await ctx.send(f'`{str(user)}` has **{str(balance)}** credits in their account.')
+            await ctx.send(f'`{str(user)}` has **{str(balance)}** credits in their account.')
 
     @commands.command()
     async def payday(self, ctx: commands.Context):
@@ -190,6 +204,23 @@ class Economy(commands.Cog):
                                           f'Your next payday is in **24h 0m 0s**!',
                               color=discord.Color.dark_gold())
         await ctx.send(embed=embed)
+
+    @commands.command()
+    async def transfer(self, ctx: commands.Context, target: discord.User, amount: int):
+        """
+        Transfers credits from your account to another user's account.
+
+        `<target>` - user to transfer credits to
+        `<amount>` - amount to transfer
+        """
+        if not self.credits_has_account(ctx.author) or not self.credits_has_account(target):
+            await ctx.send('Both you and the target need a credits account!')
+            return
+        if not self.credits_withdraw(ctx.author, amount):
+            await ctx.send('You don\'t have enough credits for this transfer!')
+            return
+        self.credits_deposit(target, amount)
+        await ctx.send(f'Sent **{amount}** credits `{str(target)}`\'s way!')
 
 
 def setup(bot: commands.Bot):
