@@ -139,3 +139,6 @@ configs/
 
 # UserData cog storage
 userdata/
+
+# venv activation shortcut
+activate.bat
