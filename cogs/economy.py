@@ -150,6 +150,7 @@ class Economy(commands.Cog):
         """Creates an account for you, if you don't already have one."""
         if self.credits_has_account(ctx.author):
             await ctx.send('You already have an account!')
+            return
         self.credits_set(ctx.author, 0)
 
     @commands.command()
@@ -185,8 +186,7 @@ class Economy(commands.Cog):
             last_payday = datetime.fromisoformat(u_dict['last_payday'])
             delta = datetime.now(timezone.utc) - now
             if delta < delta_24h:
-                next_payday = last_payday + timedelta(hours=24)
-                next_delta = next_payday - now
+                next_delta = (last_payday + delta_24h) - now
                 mm, ss = divmod(next_delta.seconds, 60)
                 hh, mm = divmod(mm, 60)
                 embed = discord.Embed(title='Not yet!',
