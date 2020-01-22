@@ -1,8 +1,9 @@
 # Extensions to load on startup
 startup_extensions = [
     'cogs.userdata',
+    'cogs.admin',
     'cogs.economy',
-    'cogs.admin'
+    'cogs.gambling',
 ]
 
 # Command prefixes
